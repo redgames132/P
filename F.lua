@@ -1,122 +1,198 @@
--- Configuração de Hardware
 local mon = peripheral.find("monitor")
-if not mon then
-    print("Erro: Conecte um monitor avançado 3x3!")
-    return
-end
+local speaker = peripheral.find("speaker")
 
--- Ativando o CC: Graphics
+if not mon then print("Erro: Conecte um monitor!") return end
+if not speaker then print("Aviso: Speaker nao encontrado para os sons!") end
+
+-- Configuração da Tela
+mon.setTextScale(0.5)
 term.redirect(mon)
-if not term.setGraphicsMode then
-    term.restore()
-    print("Erro: CC: Graphics não detectado.")
-    return
-end
-
--- Modo 1: Desenho de pixels com a paleta de 16 cores
-term.setGraphicsMode(1)
 local w, h = term.getSize()
 
--- Variáveis de Física e Estado
-local playerY = h / 2
-local velocity = 0
-local gravity = 0.8
-local jumpForce = -6
-local obstacles = {}
-local score = 0
-local isAlive = true
-local frames = 0
+-- Variáveis do Jogo
+local player = { hp = 50, maxHp = 50, mp = 20, maxMp = 20 }
+local boss = { name = "Mecha-Olho", hp = 150, maxHp = 150 }
+local gameState = "PLAYER_TURN"
+local message = "O Mecha-Olho bloqueia o caminho!"
 
--- Função utilitária para desenhar blocos de pixels
-local function drawRect(x, y, width, height, color)
-    for i = 0, width - 1 do
-        for j = 0, height - 1 do
-            if (x+i) >= 1 and (x+i) <= w and (y+j) >= 1 and (y+j) <= h then
-                term.setPixel(math.floor(x + i), math.floor(y + j), color)
-            end
-        end
+-- Paleta de cores para o Sprite do Chefe (Pixels grandes)
+local boss_sprite = {
+    "000088880000",
+    "008877778800",
+    "087711117780",
+    "877114411778",
+    "871144441178",
+    "871144441178",
+    "877114411778",
+    "087711117780",
+    "008877778800",
+    "000088880000"
+}
+
+-- Função para tocar som
+local function playSound(sound, pitch)
+    if speaker then
+        -- Toca sons nativos do Minecraft
+        speaker.playSound(sound, 1.0, pitch or 1.0)
     end
 end
 
--- Motor Gráfico e Lógica (Roda no Monitor)
-local function gameLoop()
-    while isAlive do
-        frames = frames + 1
-        velocity = velocity + gravity
-        playerY = playerY + velocity
-
-        -- Gerador de Pilares
-        if frames % 40 == 0 then
-            local gapCenter = math.random(30, h - 30)
-            table.insert(obstacles, {x = w, gapTop = gapCenter - 20, gapBottom = gapCenter + 20})
-        end
-
-        term.setBackgroundColor(colors.black)
-        term.clear()
-
-        -- Fundo Parallax (Estrelas em movimento)
-        for i = 1, 20 do
-            local starX = ((frames * -0.5 + i * 15) % w) + 1
-            local starY = (i * 37) % h + 1
-            term.setPixel(math.floor(starX), math.floor(starY), colors.lightGray)
-        end
-
-        -- Renderização dos Obstáculos
-        for i = #obstacles, 1, -1 do
-            local obs = obstacles[i]
-            obs.x = obs.x - 4
-            
-            -- Pilares Cyan Neon
-            drawRect(obs.x, 1, 10, obs.gapTop, colors.cyan)
-            drawRect(obs.x, obs.gapBottom, 10, h - obs.gapBottom, colors.cyan)
-
-            -- Sistema de Colisão Simples
-            local px = w / 4
-            if px + 6 >= obs.x and px <= obs.x + 10 then
-                if playerY <= obs.gapTop or playerY + 6 >= obs.gapBottom then
-                    isAlive = false
-                end
-            end
-
-            -- Contagem de Pontos
-            if obs.x < -10 then
-                table.remove(obstacles, i)
-                score = score + 1
+-- Desenha o Sprite do Chefe na tela
+local function drawBoss(x, y)
+    for row = 1, #boss_sprite do
+        local line = boss_sprite[row]
+        term.setCursorPos(x, y + row - 1)
+        for col = 1, #line do
+            local colorChar = line:sub(col, col)
+            if colorChar ~= "0" then
+                local color = math.pow(2, tonumber(colorChar, 16))
+                term.setBackgroundColor(color)
+                term.write(" ")
+            else
+                term.setBackgroundColor(colors.black)
+                term.write(" ")
             end
         end
-
-        -- Colisão com teto e chão
-        if playerY > h or playerY < 0 then isAlive = false end
-
-        -- Efeito Neon do Jogador (Borda verde, centro branco)
-        drawRect(w/4, playerY, 6, 6, colors.lime)
-        drawRect((w/4)+1, playerY+1, 4, 4, colors.white)
-
-        sleep(0.05) -- Trava o jogo em 20 FPS para evitar lag no servidor
     end
-    
-    -- Finalização
+    term.setBackgroundColor(colors.black)
+end
+
+-- Desenha a Interface (Barras de Vida e Botões)
+local function drawUI()
     term.setBackgroundColor(colors.black)
     term.clear()
-    term.restore()
-    mon.setGraphicsMode(0) -- Desliga os gráficos
-    print("Fim de Jogo! Você passou por " .. score .. " obstaculos.")
+    
+    -- Chefe
+    term.setTextColor(colors.red)
+    term.setCursorPos(w/2 - string.len(boss.name)/2, 2)
+    print(boss.name)
+    
+    -- Barra do chefe
+    term.setCursorPos(w/2 - 10, 3)
+    term.setBackgroundColor(colors.gray)
+    term.write(string.rep(" ", 20))
+    term.setCursorPos(w/2 - 10, 3)
+    term.setBackgroundColor(colors.red)
+    term.write(string.rep(" ", math.floor((boss.hp / boss.maxHp) * 20)))
+    term.setBackgroundColor(colors.black)
+
+    -- Desenha o sprite
+    drawBoss(w/2 - 6, 6)
+
+    -- Caixa de Mensagem
+    term.setCursorPos(2, h - 8)
+    term.setTextColor(colors.white)
+    print(message)
+
+    -- Status do Jogador
+    term.setCursorPos(2, h - 5)
+    term.setTextColor(colors.lime)
+    print("HP: " .. player.hp .. "/" .. player.maxHp)
+    term.setCursorPos(2, h - 4)
+    term.setTextColor(colors.lightBlue)
+    print("MP: " .. player.mp .. "/" .. player.maxMp)
+
+    -- Botões de Ação
+    if gameState == "PLAYER_TURN" then
+        term.setBackgroundColor(colors.orange)
+        term.setTextColor(colors.black)
+        term.setCursorPos(w - 15, h - 5)
+        term.write(" [ ATACAR ] ")
+        
+        term.setBackgroundColor(colors.blue)
+        term.setTextColor(colors.white)
+        term.setCursorPos(w - 15, h - 3)
+        term.write(" [ MAGIA  ] ")
+    end
+    
+    term.setBackgroundColor(colors.black)
 end
 
--- Sistema de Controles (Roda no Terminal)
-local function inputLoop()
-    term.restore()
-    print("O jogo esta rodando no monitor!")
-    print("--------------------------------")
-    print(">>> Pressione ESPACO para pular <<<")
+-- Lógica de Batalha
+local function playerAttack()
+    gameState = "ANIMATION"
+    playSound("entity.player.attack.crit", 1.0)
+    local dmg = math.random(15, 25)
+    boss.hp = math.max(0, boss.hp - dmg)
+    message = "Voce atacou! Causou " .. dmg .. " de dano."
+    drawUI()
+    sleep(2)
+end
+
+local function playerMagic()
+    if player.mp >= 10 then
+        gameState = "ANIMATION"
+        player.mp = player.mp - 10
+        playSound("block.amethyst_block.chime", 1.5)
+        local heal = math.random(15, 25)
+        player.hp = math.min(player.maxHp, player.hp + heal)
+        message = "Voce usou Cura! Recuperou " .. heal .. " HP."
+        drawUI()
+        sleep(2)
+    else
+        message = "MP Insuficiente!"
+        drawUI()
+        sleep(1)
+        return false
+    end
+    return true
+end
+
+local function bossTurn()
+    if boss.hp <= 0 then return end
+    gameState = "BOSS_TURN"
+    message = "Mecha-Olho esta preparando um laser..."
+    drawUI()
+    playSound("entity.ender_dragon.growl", 2.0)
+    sleep(2)
     
-    while isAlive do
-        local event, key = os.pullEvent("key")
-        if key == keys.space then
-            velocity = jumpForce
+    playSound("entity.generic.explode", 1.5)
+    local dmg = math.random(10, 20)
+    player.hp = math.max(0, player.hp - dmg)
+    message = "Laser atingiu voce! -" .. dmg .. " HP."
+    drawUI()
+    sleep(2)
+    
+    if player.hp > 0 then
+        gameState = "PLAYER_TURN"
+        message = "Seu turno! O que voce vai fazer?"
+        drawUI()
+    end
+end
+
+-- Loop Principal
+drawUI()
+playSound("entity.wither.spawn", 0.5) -- Som de entrada do chefe
+
+while player.hp > 0 and boss.hp > 0 do
+    if gameState == "PLAYER_TURN" then
+        -- Espera o jogador tocar no monitor
+        local event, side, x, y = os.pullEvent("monitor_touch")
+        
+        -- Verifica colisão com o botão ATACAR
+        if x >= w - 15 and x <= w - 3 and y == h - 5 then
+            playerAttack()
+            bossTurn()
+        -- Verifica colisão com o botão MAGIA
+        elseif x >= w - 15 and x <= w - 3 and y == h - 3 then
+            if playerMagic() then
+                bossTurn()
+            end
         end
     end
 end
 
--- Executa o gráfico e os controles simultaneamente
-parallel.waitForAny(gameLoop, inputLoop)
+-- Fim de jogo
+term.clear()
+term.setCursorPos(w/2 - 5, h/2)
+if player.hp <= 0 then
+    term.setTextColor(colors.red)
+    print("GAME OVER")
+    playSound("entity.player.death", 1.0)
+else
+    term.setTextColor(colors.yellow)
+    print("VOCE VENCEU!")
+    playSound("ui.toast.challenge_complete", 1.0)
+end
+sleep(3)
+term.restore()

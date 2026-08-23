@@ -6,192 +6,134 @@ if not mon then
     return
 end
 
--- Garante que os comandos vao direto para o monitor com escala padrao
-mon.setTextScale(1)
-local w, h = mon.getSize()
-
-local player = { hp = 50, maxHp = 50, mp = 20, maxMp = 20 }
-local boss = { name = "Mecha-Olho", hp = 150, maxHp = 150 }
-local gameState = "PLAYER_TURN"
-local message = "O Mecha-Olho bloqueia o caminho!"
-
-local boss_sprite = {
-    "000088880000",
-    "008877778800",
-    "087711117780",
-    "877114411778",
-    "871144441178",
-    "871144441178",
-    "877114411778",
-    "087711117780",
-    "008877778800",
-    "000088880000"
-}
-
-local function playSound(sound, pitch)
-    if speaker and speaker.playSound then
-        -- pcall previne que um som invalido trave o jogo
-        pcall(function() speaker.playSound(sound, 1.0, pitch or 1.0) end)
-    end
-end
-
-local function drawBoss(x, y)
-    for row = 1, #boss_sprite do
-        local line = boss_sprite[row]
-        mon.setCursorPos(math.floor(x), math.floor(y + row - 1))
-        for col = 1, #line do
-            local colorChar = line:sub(col, col)
-            if colorChar ~= "0" then
-                -- Usando ^ no lugar de math.pow para compatibilidade total
-                local color = 2 ^ tonumber(colorChar, 16)
-                mon.setBackgroundColor(color)
-                mon.write(" ")
-            else
-                mon.setBackgroundColor(colors.black)
-                mon.write(" ")
-            end
+-- Envolvemos o jogo inteiro em uma funcao para capturar os erros
+local function startRPG()
+    mon.setTextScale(1)
+    local w, h = mon.getSize()
+    
+    local player = { hp = 50, maxHp = 50, mp = 20 }
+    local boss = { hp = 150, maxHp = 150 }
+    local state = "TURNO"
+    local msg = "O Mecha-Olho bloqueia o caminho!"
+    
+    -- Usando o formato nativo do CC: f=preto, 8=cinza claro, 7=cinza, e=vermelho, 4=amarelo
+    local boss_sprite = {
+        "ffff8888ffff",
+        "ff88777788ff",
+        "f877eeee778f",
+        "877ee44ee778",
+        "87ee4444ee78",
+        "87ee4444ee78",
+        "877ee44ee778",
+        "f877eeee778f",
+        "ff88777788ff",
+        "ffff8888ffff"
+    }
+    
+    local function draw()
+        mon.setBackgroundColor(colors.black)
+        mon.clear()
+        
+        -- Titulo
+        mon.setCursorPos(math.floor(w/2 - 4), 2)
+        mon.setTextColor(colors.red)
+        mon.write("Mecha-Olho")
+        
+        -- Sprite desenhado de forma 100% segura com blit
+        local x = math.floor(w/2 - 6)
+        local y = 4
+        for i = 1, #boss_sprite do
+            mon.setCursorPos(x, y + i - 1)
+            mon.blit(string.rep(" ", 12), string.rep("f", 12), boss_sprite[i])
+        end
+        
+        -- Textos de Status
+        mon.setCursorPos(2, h - 5)
+        mon.setTextColor(colors.white)
+        mon.setBackgroundColor(colors.black)
+        mon.write(msg)
+        
+        mon.setCursorPos(2, h - 2)
+        mon.setTextColor(colors.lime)
+        mon.write("HP: " .. player.hp .. "/" .. player.maxHp)
+        
+        mon.setCursorPos(2, h - 1)
+        mon.setTextColor(colors.lightBlue)
+        mon.write("MP: " .. player.mp)
+        
+        -- Botoes
+        if state == "TURNO" then
+            mon.setCursorPos(w - 12, h - 3)
+            -- Fundo laranja (1), texto preto (f)
+            mon.blit("[ ATACAR ]", "ffffffffff", "1111111111") 
+            
+            mon.setCursorPos(w - 12, h - 1)
+            -- Fundo azul (b), texto branco (0)
+            mon.blit("[ CURAR  ]", "0000000000", "bbbbbbbbbb") 
         end
     end
-    mon.setBackgroundColor(colors.black)
-end
-
-local function drawUI()
-    mon.setBackgroundColor(colors.black)
-    mon.clear()
     
-    mon.setTextColor(colors.red)
-    mon.setCursorPos(math.floor(w/2 - string.len(boss.name)/2), 2)
-    mon.write(boss.name)
+    -- Inicia o desenho
+    draw()
+    print("O jogo esta rodando! Clique na tela do monitor.")
     
-    -- Barra de Vida do Chefe
-    local barX = math.floor(w/2 - 10)
-    mon.setCursorPos(barX, 3)
-    mon.setBackgroundColor(colors.gray)
-    mon.write(string.rep(" ", 20))
-    mon.setCursorPos(barX, 3)
-    mon.setBackgroundColor(colors.red)
-    local hpLength = math.floor((boss.hp / boss.maxHp) * 20)
-    if hpLength > 0 then mon.write(string.rep(" ", hpLength)) end
-    mon.setBackgroundColor(colors.black)
-
-    drawBoss(w/2 - 6, 5)
-
-    -- Caixa de texto
-    mon.setCursorPos(2, h - 5)
-    mon.setTextColor(colors.white)
-    mon.write(message)
-
-    -- Status do Jogador
-    mon.setCursorPos(2, h - 2)
-    mon.setTextColor(colors.lime)
-    mon.write("HP: " .. player.hp .. "/" .. player.maxHp)
-    mon.setCursorPos(2, h - 1)
-    mon.setTextColor(colors.lightBlue)
-    mon.write("MP: " .. player.mp .. "/" .. player.maxMp)
-
-    -- Botoes (Apenas no turno do jogador)
-    if gameState == "PLAYER_TURN" then
-        mon.setBackgroundColor(colors.orange)
-        mon.setTextColor(colors.black)
-        mon.setCursorPos(w - 13, h - 3)
-        mon.write("[ ATACAR ]")
-        
-        mon.setBackgroundColor(colors.blue)
-        mon.setTextColor(colors.white)
-        mon.setCursorPos(w - 13, h - 1)
-        mon.write("[ MAGIA  ]")
-    end
-    
-    mon.setBackgroundColor(colors.black)
-end
-
-local function playerAttack()
-    gameState = "ANIMATION"
-    playSound("entity.player.attack.crit", 1.0)
-    local dmg = math.random(15, 25)
-    boss.hp = math.max(0, boss.hp - dmg)
-    message = "Voce atacou! -" .. dmg .. " HP."
-    drawUI()
-    sleep(1.5)
-end
-
-local function playerMagic()
-    if player.mp >= 10 then
-        gameState = "ANIMATION"
-        player.mp = player.mp - 10
-        playSound("block.amethyst_block.chime", 1.5)
-        local heal = math.random(15, 25)
-        player.hp = math.min(player.maxHp, player.hp + heal)
-        message = "Cura usada! +" .. heal .. " HP."
-        drawUI()
-        sleep(1.5)
-        return true
-    else
-        message = "MP Insuficiente!"
-        drawUI()
-        sleep(1)
-        return false
-    end
-end
-
-local function bossTurn()
-    if boss.hp <= 0 then return end
-    gameState = "BOSS_TURN"
-    message = "Mecha-Olho carrega um laser..."
-    drawUI()
-    playSound("entity.ender_dragon.growl", 2.0)
-    sleep(1.5)
-    
-    playSound("entity.generic.explode", 1.5)
-    local dmg = math.random(10, 20)
-    player.hp = math.max(0, player.hp - dmg)
-    message = "O laser te atingiu! -" .. dmg .. " HP."
-    drawUI()
-    sleep(1.5)
-    
-    if player.hp > 0 then
-        gameState = "PLAYER_TURN"
-        message = "Seu turno! Escolha uma acao."
-        drawUI()
-    end
-end
-
--- Inicializacao
-print("O jogo esta rodando! Clique nos botoes do monitor.")
-drawUI()
-playSound("entity.wither.spawn", 0.5)
-
--- Loop Principal de Batalha
-while player.hp > 0 and boss.hp > 0 do
-    if gameState == "PLAYER_TURN" then
-        local event, side, x, y = os.pullEvent("monitor_touch")
-        
-        -- Verifica se o toque foi na area dos botoes (Direita da tela)
-        if x >= w - 13 and x <= w - 3 then
-            if y == h - 3 then
-                playerAttack()
-                bossTurn()
-            elseif y == h - 1 then
-                if playerMagic() then
-                    bossTurn()
+    while player.hp > 0 and boss.hp > 0 do
+        if state == "TURNO" then
+            local event, side, mx, my = os.pullEvent("monitor_touch")
+            
+            -- Lógica de clique nos botões
+            if mx >= w - 12 and mx <= w - 2 then
+                if my == h - 3 then
+                    msg = "Voce atacou! -25 HP"
+                    boss.hp = boss.hp - 25
+                    state = "BOSS"
+                elseif my == h - 1 and player.mp >= 10 then
+                    msg = "Cura usada! +20 HP"
+                    player.hp = math.min(player.maxHp, player.hp + 20)
+                    player.mp = player.mp - 10
+                    state = "BOSS"
                 end
             end
+            
+            -- Turno do Chefe
+            if state == "BOSS" then
+                draw()
+                if speaker then pcall(function() speaker.playSound("entity.player.attack.crit", 1, 1) end) end
+                sleep(1.5)
+                
+                if boss.hp > 0 then
+                    msg = "Laser inimigo! -15 HP"
+                    player.hp = player.hp - 15
+                    if speaker then pcall(function() speaker.playSound("entity.generic.explode", 1, 1) end) end
+                    draw()
+                    sleep(1.5)
+                    
+                    state = "TURNO"
+                    msg = "Seu turno! Escolha uma acao."
+                    draw()
+                end
+            end
+        else
+            sleep(0.1) -- Evita lag
         end
+    end
+    
+    -- Fim de Jogo
+    mon.setBackgroundColor(colors.black)
+    mon.clear()
+    mon.setCursorPos(math.floor(w/2 - 4), math.floor(h/2))
+    if player.hp <= 0 then
+        mon.setTextColor(colors.red)
+        mon.write("GAME OVER")
     else
-        sleep(0.1)
+        mon.setTextColor(colors.yellow)
+        mon.write("VITORIA!")
     end
 end
 
--- Tela Final
-mon.clear()
-mon.setCursorPos(math.floor(w/2 - 4), math.floor(h/2))
-if player.hp <= 0 then
-    mon.setTextColor(colors.red)
-    mon.write("GAME OVER")
-    playSound("entity.player.death", 1.0)
-else
-    mon.setTextColor(colors.yellow)
-    mon.write("VOCE VENCEU!")
-    playSound("ui.toast.challenge_complete", 1.0)
+-- Aqui é onde o erro é interceptado e exibido
+local ok, err = pcall(startRPG)
+if not ok then
+    print("O programa falhou. Aqui esta o erro:")
+    print(err)
 end
-print("Batalha encerrada.")
